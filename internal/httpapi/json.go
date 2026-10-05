@@ -8,14 +8,16 @@ import (
 	"strconv"
 
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/observability"
 )
 
 const maxRequestBody = 1 << 20
 
 type errorBody struct {
-	Code   domain.Code `json:"code"`
-	Detail string      `json:"detail"`
-	Field  string      `json:"field,omitempty"`
+	Code        domain.Code `json:"code"`
+	Detail      string      `json:"detail"`
+	Field       string      `json:"field,omitempty"`
+	OperationID string      `json:"operation_id"`
 }
 
 type errorResponse struct {
@@ -59,7 +61,7 @@ func writeJSON(response http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(response).Encode(value)
 }
 
-func writeDomainError(response http.ResponseWriter, err error) {
+func writeDomainError(response http.ResponseWriter, request *http.Request, err error) {
 	status := http.StatusInternalServerError
 	body := errorBody{
 		Code:   domain.CodeStorage,
@@ -72,6 +74,8 @@ func writeDomainError(response http.ResponseWriter, err error) {
 		body.Field = domainErr.Field
 		status = statusForCode(domainErr.Code)
 	}
+	body.OperationID = observability.OperationFromContext(request.Context())
+	observability.MarkBusinessError(request.Context(), string(body.Code))
 	writeJSON(response, status, errorResponse{Error: body})
 }
 
@@ -79,7 +83,8 @@ func statusForCode(code domain.Code) int {
 	switch code {
 	case domain.CodeInvalidInput:
 		return http.StatusBadRequest
-	case domain.CodeFormulaNotFound, domain.CodeVesselNotFound, domain.CodeRunNotFound:
+	case domain.CodeFormulaNotFound, domain.CodeVesselNotFound,
+		domain.CodeRunNotFound, domain.CodeOperationNotFound:
 		return http.StatusNotFound
 	case domain.CodeFormulaNameConflict, domain.CodeFormulaState,
 		domain.CodeFormulaInUse, domain.CodeVesselConflict,
@@ -109,10 +114,10 @@ func expectedVersion(request *http.Request) (*int64, error) {
 	return &parsed, nil
 }
 
-func handleDecode(response http.ResponseWriter, err error) bool {
+func handleDecode(response http.ResponseWriter, request *http.Request, err error) bool {
 	if err == nil {
 		return true
 	}
-	writeDomainError(response, err)
+	writeDomainError(response, request, err)
 	return false
 }

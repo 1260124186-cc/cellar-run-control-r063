@@ -52,8 +52,9 @@ go run ./cmd/fermentctl serve
 cmd/fermentctl                 service and workflow-check executable
 internal/clock                 time boundary
 internal/config                environment configuration
+internal/observability         operation ids, process identity, durable journal
 internal/domain                entities, validation, transitions, metrics
-internal/httpapi               HTTP routes, JSON decoding, errors
+internal/httpapi               HTTP routes, JSON decoding, errors, correlation
 internal/service               use-case orchestration
 internal/storage               revisioned snapshot persistence
 internal/workflowcheck         real HTTP production checks
@@ -102,10 +103,64 @@ shape:
   "error": {
     "code": "revision_conflict",
     "detail": "the aggregate version does not match X-Expected-Version",
-    "field": ""
+    "field": "",
+    "operation_id": "op_2f3a9c1e7b4d4086b1e8f6a2d0c9e531"
   }
 }
 ```
+
+## Request Correlation
+
+Every request (and every terminal retry of the same action) carries a stable
+operation id that ties together the HTTP response, the business error, the
+durable snapshot write, and the command-line workflow checks.
+
+- Send `X-Operation-Id: op_<16-32 lowercase hex digits>` on a request. When it
+  is absent the server generates one; a malformed value is rejected with `400`
+  and a replacement id is returned in the response header.
+- A retry keeps the same `X-Operation-Id` and increments
+  `X-Operation-Attempt` (defaults to `1`). Concurrent requests never share an
+  id: the id and the per-request outcome collector live on the request context.
+- The id is echoed on every response via the `X-Operation-Id` header and inside
+  the JSON error body as `error.operation_id`.
+- Each attempt is appended, fsynced, to `<data-directory>/operations.log` as
+  one JSON line holding the method, path, status, attempt number, handling
+  instance, stable error code, and the storage outcome/revision. The journal
+  never contains request bodies, formula notes, or observation notes.
+- Relocate an operation after a restart through the API:
+
+  ```text
+  GET /v1/operations/{id}
+  ```
+
+  or offline from the terminal:
+
+  ```bash
+  fermentctl operation op_2f3a9c1e7b4d4086b1e8f6a2d0c9e531
+  ```
+
+Each served attempt also emits one structured stderr line, for example:
+
+```text
+op=op_... attempt=1 method=POST path="/v1/formulas" status=201 duration_ms=3 error_code="" storage=ok revision=1
+```
+
+`GET /healthz` identifies the current process in addition to snapshot health:
+
+```json
+{
+  "status": "ok",
+  "revision": 3,
+  "instance_id": "op_2f3a9c1e7b4d4086b1e8f6a2d0c9e531",
+  "pid": 6616,
+  "started_at": "2026-10-05T14:20:05.21Z",
+  "host": "cellar-host",
+  "current_operation": "op_2f3a9c1e7b4d4086b1e8f6a2d0c9e531"
+}
+```
+
+`instance_id` is regenerated on every start, so health output distinguishes
+processes while the durable operation journal keeps old operations locatable.
 
 ## Workflow Checks
 
@@ -115,11 +170,14 @@ Run each production workflow check separately:
 go run ./cmd/fermentctl check formula-approval
 go run ./cmd/fermentctl check vessel-run-lifecycle
 go run ./cmd/fermentctl check observations-completion
+go run ./cmd/fermentctl check operation-tracing
 ```
 
 Each check creates a temporary snapshot directory, starts the real HTTP
 handler on a loopback listener, issues JSON requests, verifies success and
-failure behavior, and removes its temporary data.
+failure behavior, and removes its temporary data. The operation-tracing check
+additionally simulates a process restart, concurrent requests, terminal
+retries, and a durable snapshot-write failure.
 
 ## Persistence And Recovery
 

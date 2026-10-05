@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/clock"
@@ -43,4 +44,13 @@ func generatedRunCode() (string, error) {
 	}
 	suffix := strings.ToUpper(strings.TrimPrefix(value, "run_"))
 	return "RUN-" + suffix, nil
+}
+
+// ensureContext tolerates callers that did not thread a request context so the
+// orchestration layer never panics; storage outcomes then simply go unrecorded.
+func ensureContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
 }

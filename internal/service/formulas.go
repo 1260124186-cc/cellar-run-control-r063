@@ -1,13 +1,15 @@
 package service
 
 import (
+	"context"
 	"sort"
 	"time"
 
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
 )
 
-func (s *Service) CreateFormula(input CreateFormulaInput) (domain.Formula, error) {
+func (s *Service) CreateFormula(ctx context.Context, input CreateFormulaInput) (domain.Formula, error) {
+	ctx = ensureContext(ctx)
 	now := s.clock.Now()
 	formula := domain.Formula{
 		Name:                  input.Name,
@@ -34,7 +36,7 @@ func (s *Service) CreateFormula(input CreateFormulaInput) (domain.Formula, error
 	formula.ID = id
 	nameKey := domain.NameKey(formula.Name)
 
-	err = s.store.Execute(func(snapshot *domain.Snapshot) error {
+	err = s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		if _, exists := snapshot.NameIndex[nameKey]; exists {
 			return domain.NewError(domain.CodeFormulaNameConflict,
 				"a formula with the same normalized name already exists")
@@ -50,11 +52,13 @@ func (s *Service) CreateFormula(input CreateFormulaInput) (domain.Formula, error
 }
 
 func (s *Service) SetFormulaSteps(
+	ctx context.Context,
 	id string,
 	input SetFormulaStepsInput,
 ) (domain.Formula, error) {
+	ctx = ensureContext(ctx)
 	var updated domain.Formula
-	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+	err := s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[id]
 		if !ok {
 			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
@@ -76,9 +80,10 @@ func (s *Service) SetFormulaSteps(
 	return updated, nil
 }
 
-func (s *Service) ApproveFormula(id string, input VersionInput) (domain.Formula, error) {
+func (s *Service) ApproveFormula(ctx context.Context, id string, input VersionInput) (domain.Formula, error) {
+	ctx = ensureContext(ctx)
 	var updated domain.Formula
-	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+	err := s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[id]
 		if !ok {
 			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
@@ -99,9 +104,10 @@ func (s *Service) ApproveFormula(id string, input VersionInput) (domain.Formula,
 	return updated, nil
 }
 
-func (s *Service) RetireFormula(id string, input VersionInput) (domain.Formula, error) {
+func (s *Service) RetireFormula(ctx context.Context, id string, input VersionInput) (domain.Formula, error) {
+	ctx = ensureContext(ctx)
 	var updated domain.Formula
-	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+	err := s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[id]
 		if !ok {
 			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
@@ -129,9 +135,10 @@ func (s *Service) RetireFormula(id string, input VersionInput) (domain.Formula, 
 	return updated, nil
 }
 
-func (s *Service) GetFormula(id string) (domain.Formula, error) {
+func (s *Service) GetFormula(ctx context.Context, id string) (domain.Formula, error) {
+	ctx = ensureContext(ctx)
 	var found domain.Formula
-	err := s.store.View(func(snapshot domain.Snapshot) error {
+	err := s.store.View(ctx, func(snapshot domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[id]
 		if !ok {
 			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
@@ -145,9 +152,10 @@ func (s *Service) GetFormula(id string) (domain.Formula, error) {
 	return found, nil
 }
 
-func (s *Service) ListFormulas() ([]domain.Formula, error) {
+func (s *Service) ListFormulas(ctx context.Context) ([]domain.Formula, error) {
+	ctx = ensureContext(ctx)
 	var formulas []domain.Formula
-	err := s.store.View(func(snapshot domain.Snapshot) error {
+	err := s.store.View(ctx, func(snapshot domain.Snapshot) error {
 		formulas = make([]domain.Formula, 0, len(snapshot.Formulas))
 		for _, formula := range snapshot.Formulas {
 			formulas = append(formulas, formula.Clone())

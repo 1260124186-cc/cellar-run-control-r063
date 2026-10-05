@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/observability"
 )
 
 const stateFileName = "state.json"
@@ -140,14 +142,14 @@ func (s *Store) Revision() int64 {
 	return s.snapshot.Revision
 }
 
-func (s *Store) View(visitor func(domain.Snapshot) error) error {
+func (s *Store) View(ctx context.Context, visitor func(domain.Snapshot) error) error {
 	s.mu.RLock()
 	copied := s.snapshot.Clone()
 	s.mu.RUnlock()
 	return visitor(copied)
 }
 
-func (s *Store) Update(expected *int64, mutate func(*domain.Snapshot) error) error {
+func (s *Store) Update(ctx context.Context, expected *int64, mutate func(*domain.Snapshot) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -162,12 +164,14 @@ func (s *Store) Update(expected *int64, mutate func(*domain.Snapshot) error) err
 	candidate.Revision = s.snapshot.Revision + 1
 	candidate.UpdatedAt = s.now()
 	if err := writeSnapshot(s.path, candidate); err != nil {
+		observability.MarkStorage(ctx, s.snapshot.Revision, true)
 		return domain.NewError(domain.CodeStorage, err.Error())
 	}
 	s.snapshot = candidate
+	observability.MarkStorage(ctx, candidate.Revision, false)
 	return nil
 }
 
-func (s *Store) Execute(mutator func(*domain.Snapshot) error) error {
-	return s.Update(nil, mutator)
+func (s *Store) Execute(ctx context.Context, mutator func(*domain.Snapshot) error) error {
+	return s.Update(ctx, nil, mutator)
 }

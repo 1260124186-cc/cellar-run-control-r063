@@ -19,6 +19,11 @@
       "responsibility": "provide a replaceable time boundary"
     },
     {
+      "id": "observability",
+      "path": "internal/observability",
+      "responsibility": "issue stable operation ids, expose process identity, and maintain the durable operation journal"
+    },
+    {
       "id": "domain",
       "path": "internal/domain",
       "responsibility": "entities, validation, state transitions, and metrics"
@@ -111,6 +116,27 @@
         "httpapi",
         "service",
         "domain",
+        "storage"
+      ]
+    },
+    {
+      "id": "operation-tracing",
+      "name": "Correlate one operator action across HTTP, errors, storage, retries, and restarts",
+      "entry": "X-Operation-Id on any /v1 request",
+      "steps": [
+        "assign or accept a stable operation id and echo it on the response and error body",
+        "retry from the terminal reusing the id with an incremented attempt",
+        "record business error codes and durable snapshot write outcomes on the operation",
+        "reopen the durable journal after a restart and relocate the operation",
+        "report per-process identity on the health endpoint"
+      ],
+      "success": "every attempt of one operation is retrievable together across process restarts",
+      "failure": "business errors and failed snapshot writes are marked on the same operation id without sensitive free text",
+      "verification": "the check issues real concurrent HTTP requests, simulates a restart and a storage failure, and inspects the durable journal",
+      "module_ids": [
+        "httpapi",
+        "observability",
+        "service",
         "storage"
       ]
     }

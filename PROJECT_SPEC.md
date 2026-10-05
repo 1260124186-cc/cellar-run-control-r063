@@ -152,10 +152,12 @@ domain rules, and snapshot storage.
 
 ## Modules
 
-- `cmd/fermentctl`: executable entry point for the HTTP service and bounded
-  workflow checks.
+- `cmd/fermentctl`: executable entry point for the HTTP service, bounded
+  workflow checks, and offline operation lookup.
 - `internal/config`: environment and command-line configuration.
 - `internal/clock`: deterministic clock boundary for production and checks.
+- `internal/observability`: stable operation ids, per-process identity, and the
+  durable append-only operation journal.
 - `internal/domain`: entities, validation, state transitions, and metrics.
 - `internal/service`: use-case orchestration and revision coordination.
 - `internal/storage`: snapshot repository, atomic replacement, and locking.
@@ -189,14 +191,34 @@ updated aggregate and its version. A failed write returns:
 Write requests may include `X-Expected-Version`. When present, the service
 rejects a stale write instead of overwriting newer state.
 
-`GET /healthz` returns process health and the current snapshot revision.
+### Request Correlation
+
+Every request carries a stable operation id via `X-Operation-Id`. The server
+generates one when it is absent and rejects a malformed value; a terminal retry
+reuses the same id with an incremented `X-Operation-Attempt`. The id is echoed
+in the response header and inside error bodies as `error.operation_id`. The id
+and its outcome collector are bound to the request context, so concurrent
+requests never exchange ids.
+
+Each attempt is appended and fsynced to `operations.log` in the data directory
+as one JSON line: operation id, attempt, handling instance, method, path,
+status, duration, stable error code, and the durable-write outcome with the
+resulting revision. Request bodies, formula free text, and observation notes
+are never recorded; path values are sanitized of control characters. The
+journal is replayed on startup, so `GET /v1/operations/{id}` and
+`fermentctl operation <id>` relocate an operation after a restart.
+
+`GET /healthz` returns process health, the current snapshot revision, and the
+current process identity: a per-start instance id, pid, start time, host, and
+the caller's operation id.
 
 ## Persistence And Concurrency
 
-The configured data directory contains `state.json`. Writes are serialized by
-an in-process mutex. The complete state is encoded, committed to durable
-storage, and then atomically renamed over the target. An update is not
-published in memory unless persistence succeeds.
+The configured data directory contains `state.json` and the append-only
+`operations.log`. Writes are serialized by an in-process mutex. The complete
+state is encoded, committed to durable storage, and then atomically renamed
+over the target. An update is not published in memory unless persistence
+succeeds; a failed durable write is recorded against the request operation id.
 
 Reads use copied values and never expose repository-owned maps or slices. The
 default address is `127.0.0.1:8088`, the request body limit is 1 MiB, and all
@@ -217,6 +239,14 @@ behavior, and exit without external services:
 - `go run ./cmd/fermentctl check formula-approval`
 - `go run ./cmd/fermentctl check vessel-run-lifecycle`
 - `go run ./cmd/fermentctl check observations-completion`
+- `go run ./cmd/fermentctl check operation-tracing`
+
+The operation-tracing check starts the real HTTP handler and verifies: a
+stable operation id on the response and error body, a terminal retry that
+reuses the id with an incremented attempt, isolation across twelve concurrent
+requests, exclusion of sensitive free text from the journal, process identity
+on `/healthz`, relocation of the operation after a simulated restart, and
+correlation of a forced durable snapshot-write failure (`storage_failed`).
 
 ## Scope Limits
 

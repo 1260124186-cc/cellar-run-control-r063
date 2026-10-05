@@ -24,10 +24,10 @@ type setStepsRequest struct {
 func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 	mux.HandleFunc("POST /v1/formulas", func(response http.ResponseWriter, request *http.Request) {
 		body, err := decodeJSON[createFormulaRequest](response, request)
-		if !handleDecode(response, err) {
+		if !handleDecode(response, request, err) {
 			return
 		}
-		formula, err := app.CreateFormula(service.CreateFormulaInput{
+		formula, err := app.CreateFormula(request.Context(), service.CreateFormulaInput{
 			Name:                  body.Name,
 			Style:                 body.Style,
 			TargetOriginalGravity: body.TargetOriginalGravity,
@@ -37,25 +37,25 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 			MaximumDays:           body.MaximumDays,
 		})
 		if err != nil {
-			writeDomainError(response, err)
+			writeDomainError(response, request, err)
 			return
 		}
 		writeJSON(response, http.StatusCreated, formula)
 	})
 
-	mux.HandleFunc("GET /v1/formulas", func(response http.ResponseWriter, _ *http.Request) {
-		formulas, err := app.ListFormulas()
+	mux.HandleFunc("GET /v1/formulas", func(response http.ResponseWriter, request *http.Request) {
+		formulas, err := app.ListFormulas(request.Context())
 		if err != nil {
-			writeDomainError(response, err)
+			writeDomainError(response, request, err)
 			return
 		}
 		writeJSON(response, http.StatusOK, map[string]any{"formulas": formulas})
 	})
 
 	mux.HandleFunc("GET /v1/formulas/{id}", func(response http.ResponseWriter, request *http.Request) {
-		formula, err := app.GetFormula(request.PathValue("id"))
+		formula, err := app.GetFormula(request.Context(), request.PathValue("id"))
 		if err != nil {
-			writeDomainError(response, err)
+			writeDomainError(response, request, err)
 			return
 		}
 		writeJSON(response, http.StatusOK, formula)
@@ -63,17 +63,17 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 
 	mux.HandleFunc("PUT /v1/formulas/{id}/steps", func(response http.ResponseWriter, request *http.Request) {
 		body, err := decodeJSON[setStepsRequest](response, request)
-		if !handleDecode(response, err) {
+		if !handleDecode(response, request, err) {
 			return
 		}
 		expected, err := expectedVersion(request)
-		if !handleDecode(response, err) {
+		if !handleDecode(response, request, err) {
 			return
 		}
-		formula, err := app.SetFormulaSteps(request.PathValue("id"),
+		formula, err := app.SetFormulaSteps(request.Context(), request.PathValue("id"),
 			service.SetFormulaStepsInput{ExpectedVersion: expected, Steps: body.Steps})
 		if err != nil {
-			writeDomainError(response, err)
+			writeDomainError(response, request, err)
 			return
 		}
 		writeJSON(response, http.StatusOK, formula)
@@ -81,13 +81,13 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 
 	mux.HandleFunc("POST /v1/formulas/{id}/approve", func(response http.ResponseWriter, request *http.Request) {
 		expected, err := expectedVersion(request)
-		if !handleDecode(response, err) {
+		if !handleDecode(response, request, err) {
 			return
 		}
-		formula, err := app.ApproveFormula(request.PathValue("id"),
+		formula, err := app.ApproveFormula(request.Context(), request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
-			writeDomainError(response, err)
+			writeDomainError(response, request, err)
 			return
 		}
 		writeJSON(response, http.StatusOK, formula)
@@ -95,13 +95,13 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 
 	mux.HandleFunc("POST /v1/formulas/{id}/retire", func(response http.ResponseWriter, request *http.Request) {
 		expected, err := expectedVersion(request)
-		if !handleDecode(response, err) {
+		if !handleDecode(response, request, err) {
 			return
 		}
-		formula, err := app.RetireFormula(request.PathValue("id"),
+		formula, err := app.RetireFormula(request.Context(), request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
-			writeDomainError(response, err)
+			writeDomainError(response, request, err)
 			return
 		}
 		writeJSON(response, http.StatusOK, formula)
