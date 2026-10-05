@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/operation"
 )
 
 const stateFileName = "state.json"
@@ -19,9 +21,10 @@ type Store struct {
 	path     string
 	snapshot domain.Snapshot
 	now      func() time.Time
+	logger   *operation.Logger
 }
 
-func Open(dataDir string) (*Store, error) {
+func Open(dataDir string, logger *operation.Logger) (*Store, error) {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create data directory: %w", err)
 	}
@@ -29,6 +32,7 @@ func Open(dataDir string) (*Store, error) {
 		path:     filepath.Join(dataDir, stateFileName),
 		snapshot: domain.EmptySnapshot(),
 		now:      func() time.Time { return time.Now().UTC() },
+		logger:   logger,
 	}
 	if err := store.load(); err != nil {
 		return nil, err
@@ -147,7 +151,11 @@ func (s *Store) View(visitor func(domain.Snapshot) error) error {
 	return visitor(copied)
 }
 
-func (s *Store) Update(expected *int64, mutate func(*domain.Snapshot) error) error {
+func (s *Store) Update(
+	ctx context.Context,
+	expected *int64,
+	mutate func(*domain.Snapshot) error,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -162,12 +170,17 @@ func (s *Store) Update(expected *int64, mutate func(*domain.Snapshot) error) err
 	candidate.Revision = s.snapshot.Revision + 1
 	candidate.UpdatedAt = s.now()
 	if err := writeSnapshot(s.path, candidate); err != nil {
+		s.logger.Log(operation.EventStorageFailure, operation.Fields{
+			"operation_id": operation.IDFromContext(ctx),
+			"action":       "replace_snapshot",
+			"detail":       err.Error(),
+		})
 		return domain.NewError(domain.CodeStorage, err.Error())
 	}
 	s.snapshot = candidate
 	return nil
 }
 
-func (s *Store) Execute(mutator func(*domain.Snapshot) error) error {
-	return s.Update(nil, mutator)
+func (s *Store) Execute(ctx context.Context, mutator func(*domain.Snapshot) error) error {
+	return s.Update(ctx, nil, mutator)
 }

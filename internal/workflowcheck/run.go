@@ -7,6 +7,7 @@ import (
 
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/clock"
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/httpapi"
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/operation"
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/service"
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/storage"
 )
@@ -18,31 +19,33 @@ func Run(name string) error {
 	}
 	defer os.RemoveAll(dataDir)
 
-	store, err := storage.Open(dataDir)
+	identity := operation.NewProcessIdentity()
+	logger := operation.NewLogger(os.Stderr, identity)
+	store, err := storage.Open(dataDir, logger)
 	if err != nil {
 		return err
 	}
-	app := service.New(store, clock.System{})
-	server := httptest.NewServer(httpapi.NewHandler(app))
+	app := service.New(store, clock.System{}, logger)
+	server := httptest.NewServer(httpapi.NewHandler(app, logger, identity))
 	defer server.Close()
-	api := newClient(server.URL)
 
+	prefix := operation.NewID("chk")
+	api := newClient(server.URL, prefix)
+
+	var runErr error
 	switch name {
 	case "formula-approval":
-		if err := formulaApproval(api); err != nil {
-			return err
-		}
+		runErr = formulaApproval(api)
 	case "vessel-run-lifecycle":
-		if err := vesselRunLifecycle(api); err != nil {
-			return err
-		}
+		runErr = vesselRunLifecycle(api)
 	case "observations-completion":
-		if err := observationsCompletion(api); err != nil {
-			return err
-		}
+		runErr = observationsCompletion(api)
 	default:
 		return fmt.Errorf("unknown workflow check %q", name)
 	}
-	fmt.Printf("workflow check passed: %s\n", name)
+	if runErr != nil {
+		return fmt.Errorf("operation prefix %s: %w", prefix, runErr)
+	}
+	fmt.Printf("workflow check passed: %s (operation prefix %s)\n", name, prefix)
 	return nil
 }

@@ -17,7 +17,7 @@ func registerVesselRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		vessel, err := app.CreateVessel(service.CreateVesselInput{
+		vessel, err := app.CreateVessel(request.Context(), service.CreateVesselInput{
 			Code:      body.Code,
 			CapacityL: body.CapacityL,
 		})
@@ -28,8 +28,8 @@ func registerVesselRoutes(mux *http.ServeMux, app *service.Service) {
 		writeJSON(response, http.StatusCreated, vessel)
 	})
 
-	mux.HandleFunc("GET /v1/vessels", func(response http.ResponseWriter, _ *http.Request) {
-		vessels, err := app.ListVessels()
+	mux.HandleFunc("GET /v1/vessels", func(response http.ResponseWriter, request *http.Request) {
+		vessels, err := app.ListVessels(request.Context())
 		if err != nil {
 			writeDomainError(response, err)
 			return
@@ -38,7 +38,7 @@ func registerVesselRoutes(mux *http.ServeMux, app *service.Service) {
 	})
 
 	mux.HandleFunc("GET /v1/vessels/{id}", func(response http.ResponseWriter, request *http.Request) {
-		vessel, err := app.GetVessel(request.PathValue("id"))
+		vessel, err := app.GetVessel(request.Context(), request.PathValue("id"))
 		if err != nil {
 			writeDomainError(response, err)
 			return
@@ -51,7 +51,7 @@ func registerVesselRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		vessel, err := app.FinishCleaning(request.PathValue("id"),
+		vessel, err := app.FinishCleaning(request.Context(), request.PathValue("id"),
 			service.FinishCleaningInput{ExpectedVersion: expected})
 		if err != nil {
 			writeDomainError(response, err)
@@ -65,7 +65,7 @@ func registerVesselRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		vessel, err := app.RetireVessel(request.PathValue("id"),
+		vessel, err := app.RetireVessel(request.Context(), request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
 			writeDomainError(response, err)

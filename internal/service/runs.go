@@ -1,12 +1,17 @@
 package service
 
 import (
+	"context"
 	"sort"
 
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
 )
 
-func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error) {
+func (s *Service) CreateRun(
+	ctx context.Context,
+	input CreateRunInput,
+) (created domain.FermentationRun, err error) {
+	defer func() { s.logFailure(ctx, "CreateRun", err) }()
 	now := s.clock.Now()
 	code := domain.NormalizeRunCode(input.Code)
 	if code == "" {
@@ -36,7 +41,7 @@ func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error
 	}
 	run.ID = id
 
-	err = s.store.Execute(func(snapshot *domain.Snapshot) error {
+	err = s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[run.FormulaID]
 		if !ok {
 			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
@@ -60,12 +65,12 @@ func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error
 }
 
 func (s *Service) ReserveRun(
+	ctx context.Context,
 	id string,
 	input ReserveRunInput,
-) (domain.FermentationRun, domain.Vessel, error) {
-	var updatedRun domain.FermentationRun
-	var updatedVessel domain.Vessel
-	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+) (updatedRun domain.FermentationRun, updatedVessel domain.Vessel, err error) {
+	defer func() { s.logFailure(ctx, "ReserveRun", err) }()
+	err = s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")
@@ -100,12 +105,12 @@ func (s *Service) ReserveRun(
 }
 
 func (s *Service) StartRun(
+	ctx context.Context,
 	id string,
 	input VersionInput,
-) (domain.FermentationRun, domain.Vessel, error) {
-	var updatedRun domain.FermentationRun
-	var updatedVessel domain.Vessel
-	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+) (updatedRun domain.FermentationRun, updatedVessel domain.Vessel, err error) {
+	defer func() { s.logFailure(ctx, "StartRun", err) }()
+	err = s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")
@@ -139,12 +144,12 @@ func (s *Service) StartRun(
 }
 
 func (s *Service) AbortRun(
+	ctx context.Context,
 	id string,
 	input VersionInput,
-) (domain.FermentationRun, domain.Vessel, error) {
-	var updatedRun domain.FermentationRun
-	var updatedVessel domain.Vessel
-	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+) (updatedRun domain.FermentationRun, updatedVessel domain.Vessel, err error) {
+	defer func() { s.logFailure(ctx, "AbortRun", err) }()
+	err = s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")
@@ -181,9 +186,12 @@ func (s *Service) AbortRun(
 	return updatedRun, updatedVessel, nil
 }
 
-func (s *Service) GetRun(id string) (domain.FermentationRun, error) {
-	var found domain.FermentationRun
-	err := s.store.View(func(snapshot domain.Snapshot) error {
+func (s *Service) GetRun(
+	ctx context.Context,
+	id string,
+) (found domain.FermentationRun, err error) {
+	defer func() { s.logFailure(ctx, "GetRun", err) }()
+	err = s.store.View(func(snapshot domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")
@@ -197,9 +205,9 @@ func (s *Service) GetRun(id string) (domain.FermentationRun, error) {
 	return found, nil
 }
 
-func (s *Service) ListRuns() ([]domain.FermentationRun, error) {
-	var runs []domain.FermentationRun
-	err := s.store.View(func(snapshot domain.Snapshot) error {
+func (s *Service) ListRuns(ctx context.Context) (runs []domain.FermentationRun, err error) {
+	defer func() { s.logFailure(ctx, "ListRuns", err) }()
+	err = s.store.View(func(snapshot domain.Snapshot) error {
 		runs = make([]domain.FermentationRun, 0, len(snapshot.Runs))
 		for _, run := range snapshot.Runs {
 			runs = append(runs, run.Clone())

@@ -54,6 +54,7 @@ internal/clock                 time boundary
 internal/config                environment configuration
 internal/domain                entities, validation, transitions, metrics
 internal/httpapi               HTTP routes, JSON decoding, errors
+internal/operation             operation identifiers, process identity, JSON log
 internal/service               use-case orchestration
 internal/storage               revisioned snapshot persistence
 internal/workflowcheck         real HTTP production checks
@@ -106,6 +107,44 @@ shape:
   }
 }
 ```
+
+## Request Correlation
+
+Every request is assigned one stable operation identifier. A client or
+terminal retry may supply its own with the `X-Operation-Id` header
+(1–64 characters: letters, digits, `.`, `_`, `-`, starting with a letter or
+digit); otherwise the service generates an `op_...` value. Every response,
+including errors, echoes the authoritative identifier in the
+`X-Operation-Id` response header. Retrying a failed call with the same
+header value correlates both attempts as one operation. The identifier lives
+in the request context, so concurrent requests never share an operation
+number.
+
+The service appends one JSON object per line to
+`<data-directory>/operations.log` and mirrors it to stderr. Each record
+carries `operation_id`, `process_id`, and `pid`, with events
+`process_started`, `http_request`, `service_error`, `storage_failure`, and
+`http_panic`. The file survives restarts, so a past operation stays
+locatable with `grep <operation-id> <data-directory>/operations.log`, and
+the process identity on each line shows which process handled it.
+
+Log records contain only stable metadata: identifiers, error codes, field
+names, states, and system error messages. Request payloads and free-text
+bodies such as run notes or observation notes are never written to the log.
+
+`GET /healthz` returns the process identity alongside the snapshot revision:
+
+```json
+{
+  "status": "ok",
+  "revision": 12,
+  "process": {"id": "proc_...", "pid": 4242, "started_at": "2026-10-05T..."}
+}
+```
+
+Each workflow check run sends its own `chk_...-NNNN` operation identifiers,
+verifies the server echoes them, and prints its operation prefix so the run
+can be found in the server log.
 
 ## Workflow Checks
 

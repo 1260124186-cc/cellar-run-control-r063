@@ -157,6 +157,8 @@ domain rules, and snapshot storage.
 - `internal/config`: environment and command-line configuration.
 - `internal/clock`: deterministic clock boundary for production and checks.
 - `internal/domain`: entities, validation, state transitions, and metrics.
+- `internal/operation`: request operation identifiers, process identity, and
+  the structured operation log.
 - `internal/service`: use-case orchestration and revision coordination.
 - `internal/storage`: snapshot repository, atomic replacement, and locking.
 - `internal/httpapi`: routing, strict JSON decoding, error mapping, and health.
@@ -170,7 +172,9 @@ The dependency direction is:
 
 `storage -> domain`
 
-The domain package does not import outer packages.
+`cmd/httpapi/service/storage/workflowcheck -> operation`
+
+The domain and operation packages do not import outer packages.
 
 ## API Behavior
 
@@ -189,7 +193,24 @@ updated aggregate and its version. A failed write returns:
 Write requests may include `X-Expected-Version`. When present, the service
 rejects a stale write instead of overwriting newer state.
 
-`GET /healthz` returns process health and the current snapshot revision.
+`GET /healthz` returns process health, the current snapshot revision, and the
+process identity (instance identifier, PID, and start time).
+
+## Request Correlation
+
+Every request carries one stable operation identifier. A client or terminal
+retry may supply `X-Operation-Id`; invalid or missing values are replaced
+with a generated `op_...` identifier. Every response echoes the authoritative
+identifier in the `X-Operation-Id` header. The identifier travels in the
+request context through the service and storage layers, so concurrent
+requests never share an operation number.
+
+The service appends structured JSON lines to
+`<data-directory>/operations.log` (mirrored to stderr) covering request
+completion, business errors, storage failures, and process start. The log
+persists across restarts and each record carries the process identity, so a
+past operation remains locatable and attributable. Log records contain only
+stable metadata; request payloads and note bodies are never logged.
 
 ## Persistence And Concurrency
 

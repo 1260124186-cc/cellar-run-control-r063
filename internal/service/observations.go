@@ -1,13 +1,18 @@
 package service
 
-import "github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
+import (
+	"context"
+
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
+)
 
 func (s *Service) AppendObservation(
+	ctx context.Context,
 	id string,
 	input ObservationInput,
-) (domain.FermentationRun, error) {
-	var updated domain.FermentationRun
-	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+) (updated domain.FermentationRun, err error) {
+	defer func() { s.logFailure(ctx, "AppendObservation", err) }()
+	err = s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")
@@ -36,11 +41,12 @@ func (s *Service) AppendObservation(
 }
 
 func (s *Service) BeginConditioning(
+	ctx context.Context,
 	id string,
 	input VersionInput,
-) (domain.FermentationRun, error) {
-	var updated domain.FermentationRun
-	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+) (updated domain.FermentationRun, err error) {
+	defer func() { s.logFailure(ctx, "BeginConditioning", err) }()
+	err = s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")
@@ -62,12 +68,12 @@ func (s *Service) BeginConditioning(
 }
 
 func (s *Service) CompleteRun(
+	ctx context.Context,
 	id string,
 	input VersionInput,
-) (domain.FermentationRun, domain.Vessel, error) {
-	var updatedRun domain.FermentationRun
-	var updatedVessel domain.Vessel
-	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+) (updatedRun domain.FermentationRun, updatedVessel domain.Vessel, err error) {
+	defer func() { s.logFailure(ctx, "CompleteRun", err) }()
+	err = s.store.Execute(ctx, func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")

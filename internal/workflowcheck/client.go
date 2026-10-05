@@ -8,33 +8,44 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/operation"
 )
 
 type client struct {
-	baseURL string
-	http    *http.Client
+	baseURL         string
+	http            *http.Client
+	operationPrefix string
+	sequence        int
 }
 
 type response struct {
-	status int
-	body   []byte
+	status      int
+	body        []byte
+	operationID string
 }
 
-func newClient(baseURL string) *client {
+func newClient(baseURL, operationPrefix string) *client {
 	return &client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		http: &http.Client{
 			Timeout: 5 * time.Second,
 		},
+		operationPrefix: operationPrefix,
 	}
 }
 
+// call issues one request under a stable operation identifier derived from
+// the check run prefix, so every request the check makes can be found in the
+// server operation log. The server must echo the same identifier back.
 func (c *client) call(
 	method string,
 	path string,
 	payload any,
 	expectedVersion *int64,
 ) (response, error) {
+	c.sequence++
+	operationID := fmt.Sprintf("%s-%04d", c.operationPrefix, c.sequence)
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -53,16 +64,22 @@ func (c *client) call(
 	if expectedVersion != nil {
 		request.Header.Set("X-Expected-Version", fmt.Sprintf("%d", *expectedVersion))
 	}
+	request.Header.Set(operation.HeaderName, operationID)
 	raw, err := c.http.Do(request)
 	if err != nil {
-		return response{}, fmt.Errorf("perform request: %w", err)
+		return response{}, fmt.Errorf("perform request (operation %s): %w", operationID, err)
 	}
 	defer raw.Body.Close()
 	content, err := io.ReadAll(io.LimitReader(raw.Body, 2<<20))
 	if err != nil {
-		return response{}, fmt.Errorf("read response: %w", err)
+		return response{}, fmt.Errorf("read response (operation %s): %w", operationID, err)
 	}
-	return response{status: raw.StatusCode, body: content}, nil
+	echoed := raw.Header.Get(operation.HeaderName)
+	if echoed != operationID {
+		return response{}, fmt.Errorf("operation %s: response carried operation %q",
+			operationID, echoed)
+	}
+	return response{status: raw.StatusCode, body: content, operationID: echoed}, nil
 }
 
 func (r response) decode(target any) error {
@@ -84,21 +101,22 @@ func (r response) errorCode() string {
 	return body.Error.Code
 }
 
-func requireStatus(actual response, expected int, operation string) error {
+func requireStatus(actual response, expected int, action string) error {
 	if actual.status != expected {
-		return fmt.Errorf("%s: expected status %d, got %d: %s",
-			operation, expected, actual.status, strings.TrimSpace(string(actual.body)))
+		return fmt.Errorf("%s (operation %s): expected status %d, got %d: %s",
+			action, actual.operationID, expected, actual.status,
+			strings.TrimSpace(string(actual.body)))
 	}
 	return nil
 }
 
-func requireCode(actual response, expectedStatus int, expectedCode, operation string) error {
-	if err := requireStatus(actual, expectedStatus, operation); err != nil {
+func requireCode(actual response, expectedStatus int, expectedCode, action string) error {
+	if err := requireStatus(actual, expectedStatus, action); err != nil {
 		return err
 	}
 	if actual.errorCode() != expectedCode {
-		return fmt.Errorf("%s: expected error %q, got %q",
-			operation, expectedCode, actual.errorCode())
+		return fmt.Errorf("%s (operation %s): expected error %q, got %q",
+			action, actual.operationID, expectedCode, actual.errorCode())
 	}
 	return nil
 }

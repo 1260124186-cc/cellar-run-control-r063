@@ -24,6 +24,11 @@
       "responsibility": "entities, validation, state transitions, and metrics"
     },
     {
+      "id": "operation",
+      "path": "internal/operation",
+      "responsibility": "correlate requests with stable operation identifiers, process identity, and the JSON operation log"
+    },
+    {
       "id": "service",
       "path": "internal/service",
       "responsibility": "orchestrate formulas, vessels, runs, and observations"

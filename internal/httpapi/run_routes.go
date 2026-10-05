@@ -32,7 +32,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, err := app.CreateRun(service.CreateRunInput{
+		run, err := app.CreateRun(request.Context(), service.CreateRunInput{
 			Code:           body.Code,
 			FormulaID:      body.FormulaID,
 			PlannedVolumeL: body.PlannedVolumeL,
@@ -45,8 +45,8 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		writeJSON(response, http.StatusCreated, run)
 	})
 
-	mux.HandleFunc("GET /v1/runs", func(response http.ResponseWriter, _ *http.Request) {
-		runs, err := app.ListRuns()
+	mux.HandleFunc("GET /v1/runs", func(response http.ResponseWriter, request *http.Request) {
+		runs, err := app.ListRuns(request.Context())
 		if err != nil {
 			writeDomainError(response, err)
 			return
@@ -55,7 +55,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 	})
 
 	mux.HandleFunc("GET /v1/runs/{id}", func(response http.ResponseWriter, request *http.Request) {
-		run, err := app.GetRun(request.PathValue("id"))
+		run, err := app.GetRun(request.Context(), request.PathValue("id"))
 		if err != nil {
 			writeDomainError(response, err)
 			return
@@ -72,7 +72,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, vessel, err := app.ReserveRun(request.PathValue("id"), service.ReserveRunInput{
+		run, vessel, err := app.ReserveRun(request.Context(), request.PathValue("id"), service.ReserveRunInput{
 			ExpectedVersion: expected,
 			VesselID:        body.VesselID,
 		})
@@ -88,7 +88,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, vessel, err := app.StartRun(request.PathValue("id"),
+		run, vessel, err := app.StartRun(request.Context(), request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
 			writeDomainError(response, err)
@@ -102,7 +102,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, err := app.AppendObservation(request.PathValue("id"), service.ObservationInput{
+		run, err := app.AppendObservation(request.Context(), request.PathValue("id"), service.ObservationInput{
 			Sequence:     body.Sequence,
 			Gravity:      body.Gravity,
 			TemperatureC: body.TemperatureC,
@@ -121,7 +121,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, err := app.BeginConditioning(request.PathValue("id"),
+		run, err := app.BeginConditioning(request.Context(), request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
 			writeDomainError(response, err)
@@ -135,7 +135,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, vessel, err := app.CompleteRun(request.PathValue("id"),
+		run, vessel, err := app.CompleteRun(request.Context(), request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
 			writeDomainError(response, err)
@@ -149,7 +149,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, vessel, err := app.AbortRun(request.PathValue("id"),
+		run, vessel, err := app.AbortRun(request.Context(), request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
 			writeDomainError(response, err)
